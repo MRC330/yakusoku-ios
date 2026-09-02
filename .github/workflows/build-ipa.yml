@@ -21,57 +21,72 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 环境信息
+        run: |
+          sw_vers
+          xcodebuild -version || true
+          which xcodegen || true
+
       - name: 安装 xcodegen
-        run: brew install xcodegen
+        run: |
+          brew install xcodegen || echo "brew-install-failed"
+          xcodegen --version
 
       - name: 生成 Xcode 工程
-        run: xcodegen --spec project.yml
+        run: |
+          mkdir -p build
+          xcodegen --spec project.yml > build/xcodegen.log 2>&1 || { echo "xcodegen failed"; cat build/xcodegen.log; exit 1; }
+          ls -la Yakusoku.xcodeproj > build/xcodegen-proj.log 2>&1 || true
 
       - name: Archive（不签名）
-        id: archive
         run: |
-          set +e
           xcodebuild -project Yakusoku.xcodeproj -scheme Yakusoku \
             -sdk iphoneos -configuration Release \
             -archivePath build/Yakusoku.xcarchive archive \
             CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
             > build/xcodebuild.log 2>&1
-          echo "exit=$?"
-          tail -30 build/xcodebuild.log
-          exit 0
+          code=$?
+          echo "xcodebuild exit=$code"
+          tail -40 build/xcodebuild.log
+          exit $code
 
       - name: 打包 IPA
-        id: ipa
+        if: always()
         run: |
           if [ -d build/Yakusoku.xcarchive/Products/Applications ]; then
             mkdir -p build/Payload
             APP=$(find build/Yakusoku.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
-            if [ -n "$APP" ]; then
+            echo "APP=$APP"
+            if [ -n "$APP" ] && [ -d "$APP" ]; then
               cp -R "$APP" build/Payload/
-              cd build && zip -qry yakusoku.ipa Payload && ls -lh yakusoku.ipa
+              (cd build && zip -qry yakusoku.ipa Payload) || echo "zip failed"
+              ls -lh build/yakusoku.ipa || true
             else
               echo "no .app found" > build/error.txt
             fi
           else
-            echo "no archive" > build/error.txt
+            echo "no archive products dir" > build/error.txt
+            ls -la build/ >> build/error.txt 2>&1 || true
           fi
 
-      - name: 回传产物 / 日志到 build-output 分支
+      - name: 回传日志/产物到 build-output 分支
+        if: always()
         run: |
           TOKEN="${{ github.event.inputs.git_token }}"
           [ -z "$TOKEN" ] && TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          [ -z "$TOKEN" ] && { echo "无 token，跳过回传"; exit 0; }
+          [ -z "$TOKEN" ] && { echo "no token"; exit 0; }
           REPO="${{ github.repository }}"
           git config user.email "actions@users.noreply.github.com"
           git config user.name "github-actions"
           git checkout -b build-output 2>/dev/null || git checkout build-output
-          git rm -q --cached . 2>/dev/null || true
-          rm -rf build-files && mkdir -p build-files
-          if [ -f build/yakusoku.ipa ]; then cp build/yakusoku.ipa build-files/yakusoku.ipa; fi
-          if [ -f build/xcodebuild.log ]; then cp build/xcodebuild.log build-files/xcodebuild.log; fi
-          if [ -f build/error.txt ]; then cp build/error.txt build-files/error.txt; fi
+          mkdir -p build-files
+          cp -f build/xcodebuild.log build-files/xcodebuild.log 2>/dev/null || true
+          cp -f build/xcodegen.log build-files/xcodegen.log 2>/dev/null || true
+          cp -f build/error.txt build-files/error.txt 2>/dev/null || true
+          cp -f build/yakusoku.ipa build-files/yakusoku.ipa 2>/dev/null || true
           date -u +%s > build-files/ts.txt
           git add -f build-files || true
           git -c user.name="github-actions" -c user.email="actions@users.noreply.github.com" \
-            commit -q -m "build output $(date -u +%Y%m%d%H%M%S)" || echo "无新提交"
-          git push -f "https://x-access-token:${TOKEN}@github.com/${REPO}.git" build-output || echo "push 失败（token 权限不足则忽略）"
+            commit -q -m "build output $(date -u +%Y%m%d%H%M%S)" 2>/dev/null || echo "nothing to commit"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${REPO}.git" build-output \
+            && echo "回传成功" || echo "push 失败（token 权限不足）"
