@@ -7,8 +7,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // 关掉 UIWebView 遗留的键盘自动缩放问题
-        UITextField.appearance().keyboardDismissMode = .interactive
         return true
     }
 

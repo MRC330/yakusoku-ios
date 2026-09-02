@@ -37,7 +37,6 @@ final class WebViewModel: NSObject, ObservableObject {
         config.mediaTypesRequiringUserActionForPlayback = [.video]
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.suppressesIncrementalRendering = false
-        config.processPool = WKProcessPool()
 
         // localStorage / cookie 持久化，保证登录态不丢
         config.websiteDataStore = .default()
@@ -62,7 +61,7 @@ final class WebViewModel: NSObject, ObservableObject {
     }
 
     /// 把系统外观同步给网页：写 localStorage 的 theme，并加 / 去 data-theme
-    private static let themeBridgeJS = """
+    static let themeBridgeJS = """
     (function () {
       try {
         var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -188,6 +187,7 @@ extension WebViewModel: WKUIDelegate {
     }
 
     /// <input type="file"> —— 不实现这个方法，网页里点选图片会毫无反应
+    @available(iOS 18.4, *)
     func webView(
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
