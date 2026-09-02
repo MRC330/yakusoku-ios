@@ -1,9 +1,16 @@
 name: Build IPA (unsigned)
 
 on:
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:
+    inputs:
+      git_token:
+        description: "用于回传产物的 GitHub Token（可留空，用 GITHUB_TOKEN）"
+        required: false
   push:
-    tags: ["v*"]            # 打 tag v1.0.0 自动构建
+    tags: ["v*"]
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,26 +28,50 @@ jobs:
         run: xcodegen --spec project.yml
 
       - name: Archive（不签名）
+        id: archive
         run: |
+          set +e
           xcodebuild -project Yakusoku.xcodeproj -scheme Yakusoku \
             -sdk iphoneos -configuration Release \
             -archivePath build/Yakusoku.xcarchive archive \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+            > build/xcodebuild.log 2>&1
+          echo "exit=$?"
+          tail -30 build/xcodebuild.log
+          exit 0
 
       - name: 打包 IPA
+        id: ipa
         run: |
-          mkdir -p build/Payload
-          APP=$(find build/Yakusoku.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
-          cp -R "$APP" build/Payload/
-          cd build && zip -qry yakusoku.ipa Payload
-          ls -lh yakusoku.ipa
+          if [ -d build/Yakusoku.xcarchive/Products/Applications ]; then
+            mkdir -p build/Payload
+            APP=$(find build/Yakusoku.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
+            if [ -n "$APP" ]; then
+              cp -R "$APP" build/Payload/
+              cd build && zip -qry yakusoku.ipa Payload && ls -lh yakusoku.ipa
+            else
+              echo "no .app found" > build/error.txt
+            fi
+          else
+            echo "no archive" > build/error.txt
+          fi
 
-      - name: 上传产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: yakusoku-ipa
-          path: build/yakusoku.ipa
-          if-no-files-found: error
-          retention-days: 14
+      - name: 回传产物 / 日志到 build-output 分支
+        run: |
+          TOKEN="${{ github.event.inputs.git_token }}"
+          [ -z "$TOKEN" ] && TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          [ -z "$TOKEN" ] && { echo "无 token，跳过回传"; exit 0; }
+          REPO="${{ github.repository }}"
+          git config user.email "actions@users.noreply.github.com"
+          git config user.name "github-actions"
+          git checkout -b build-output 2>/dev/null || git checkout build-output
+          git rm -q --cached . 2>/dev/null || true
+          rm -rf build-files && mkdir -p build-files
+          if [ -f build/yakusoku.ipa ]; then cp build/yakusoku.ipa build-files/yakusoku.ipa; fi
+          if [ -f build/xcodebuild.log ]; then cp build/xcodebuild.log build-files/xcodebuild.log; fi
+          if [ -f build/error.txt ]; then cp build/error.txt build-files/error.txt; fi
+          date -u +%s > build-files/ts.txt
+          git add -f build-files || true
+          git -c user.name="github-actions" -c user.email="actions@users.noreply.github.com" \
+            commit -q -m "build output $(date -u +%Y%m%d%H%M%S)" || echo "无新提交"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${REPO}.git" build-output || echo "push 失败（token 权限不足则忽略）"
