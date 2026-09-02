@@ -1,0 +1,46 @@
+name: Build IPA (unsigned)
+
+on:
+  workflow_dispatch:        # 手动触发
+  push:
+    tags: ["v*"]            # 打 tag v1.0.0 自动构建
+
+jobs:
+  build:
+    runs-on: macos-latest
+    concurrency:
+      group: ipa-build
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 xcodegen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        run: xcodegen --spec project.yml
+
+      - name: Archive（不签名）
+        run: |
+          xcodebuild -project Yakusoku.xcodeproj -scheme Yakusoku \
+            -sdk iphoneos -configuration Release \
+            -archivePath build/Yakusoku.xcarchive archive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 打包 IPA
+        run: |
+          mkdir -p build/Payload
+          APP=$(find build/Yakusoku.xcarchive/Products/Applications -maxdepth 1 -name "*.app" | head -1)
+          cp -R "$APP" build/Payload/
+          cd build && zip -qry yakusoku.ipa Payload
+          ls -lh yakusoku.ipa
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: yakusoku-ipa
+          path: build/yakusoku.ipa
+          if-no-files-found: error
+          retention-days: 14

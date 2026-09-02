@@ -1,0 +1,46 @@
+# XcodeGen 配置：在 Mac 上 `xcodegen` 一条命令生成 Yakusoku.xcodeproj
+# 安装: brew install xcodegen
+name: Yakusoku
+
+options:
+  bundleIdPrefix: com.yakusoku
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    PRODUCT_NAME: yakusoku
+    PRODUCT_BUNDLE_IDENTIFIER: com.yakusoku.app
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.9"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    ENABLE_BITCODE: NO
+    DEVELOPMENT_LANGUAGE: zh_CN
+  configs:
+    debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+    release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+      VALIDATE_PRODUCT: YES
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  Yakusoku:
+    type: application
+    platform: iOS
+    sources:
+      - path: Yakusoku
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        INFOPLIST_FILE: Yakusoku/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        SUPPORTS_MACCATALYST: NO
